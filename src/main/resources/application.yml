@@ -1,0 +1,11 @@
+server:
+  port: 9999
+  context-path: /cloud-manager
+logging:
+  level:
+    org.springframework.web: WARN
+    org.cloud: DEBUG
+#  pattern:
+#    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+#    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file: ./logs/cloud-manager/cloud-manager.log

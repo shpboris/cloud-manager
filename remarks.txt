@@ -1,0 +1,22 @@
+1.
+Azure upload
+http://localhost:9999/cloud-manager/storage/AZURE/upload/bigupload/borisstg2?cloudContainerName=cdrscontainer&cloudFileName=bigupload22
+
+2.
+Azure download
+http://localhost:9999/cloud-manager/storage/AZURE/download/borisstg2/bigupload22?cloudContainerName=cdrscontainer&localFileName=bigdownload11
+
+3.
+AWS upload
+http://localhost:9999/cloud-manager/storage/AWS/upload/bigupload/borisstg2?region=us-west-2&cloudFileName=bigupload22
+
+4.
+AWS download
+http://localhost:9999/cloud-manager/storage/AWS/download/borisstg2/bigupload22?region=us-west-2&localFileName=bigdownload11
+
+5.
+Running the app on Windows from run-cloud-manager.cmd -- the below lines are the contents of the file
+
+cd .
+java -Ddomain=945c199a-83a2-4e80-9f8c-5a91be5752dd -Dsubscription=a5490867-d17a-4fa2-9f81-1e1bcb2d4a2d -Dclient=<my-client> -Dsecret=<my secret> -DlocalDirPath=C:\az-aws-storage-test -DaccessKey=<access key> -DsecretKey=<secret key> -jar cloud-manager-1.0-SNAPSHOT.jar
+pause ..
