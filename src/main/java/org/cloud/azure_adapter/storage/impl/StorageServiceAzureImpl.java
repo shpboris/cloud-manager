@@ -4,15 +4,17 @@ import com.microsoft.azure.AzureEnvironment;
 import com.microsoft.azure.credentials.ApplicationTokenCredentials;
 import com.microsoft.azure.management.Azure;
 import com.microsoft.azure.management.storage.StorageAccount;
-import com.microsoft.azure.storage.CloudStorageAccount;
-import com.microsoft.azure.storage.OperationContext;
+import com.microsoft.azure.storage.*;
 import com.microsoft.azure.storage.blob.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.Pair;
 import org.cloud.cloud_manager.storage.StorageService;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 
 import java.io.File;
 import java.time.Instant;
+import java.util.*;
 
 /**
  * Created by shpilb on 9/1/2018.
@@ -21,6 +23,10 @@ import java.time.Instant;
 @Service
 @Slf4j
 public class StorageServiceAzureImpl implements StorageService {
+
+    private static final int cacheEvictionSeconds = 600;
+    private Pair<Instant, List<StorageAccount>> storageAccountsCache = null;
+    private Map<String, Pair<Instant, String>> storageAccountToAccessKeysCache = new HashMap<>();
 
     @Override
     public void uploadFile(String cloudStorageName, String cloudContainerName, String localFileName, String cloudFileName) {
@@ -57,13 +63,8 @@ public class StorageServiceAzureImpl implements StorageService {
     private CloudBlockBlob getBlobReference(String storageAccountName, String containerName, String targetFileName) throws Exception{
         log.debug("Started getting blob reference to file: {} in storage account: {} , container is: {}" ,
                 targetFileName, storageAccountName, containerName);
-        StorageAccount storageAccount = getAzureClient().storageAccounts().list()
-                .stream()
-                .filter(s -> s.name().equals(storageAccountName))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Failed to find storage account"));
-
-        CloudStorageAccount cloudStorageAccount = CloudStorageAccount.parse(getStorageConnectionString(storageAccount));
+        StorageAccount storageAccount = getStorageAccount(storageAccountName);
+        CloudStorageAccount cloudStorageAccount = getCloudStorageAccount(storageAccount);
         CloudBlobClient blobClient = cloudStorageAccount.createCloudBlobClient();
         CloudBlobContainer container = blobClient.getContainerReference(containerName);
         BlobRequestOptions options = new BlobRequestOptions();
@@ -90,14 +91,57 @@ public class StorageServiceAzureImpl implements StorageService {
         return azure;
     }
 
-    private String getStorageConnectionString(StorageAccount storageAccount){
-        String storageConnectionString =
-                "DefaultEndpointsProtocol=http;"
-                        + "AccountName=%s;"
-                        + "AccountKey=%s";
-        storageConnectionString =
-                String.format(storageConnectionString, storageAccount.name(),
-                        storageAccount.getKeys().get(0).value());
-        return storageConnectionString;
+    private StorageAccount getStorageAccount(String storageAccountName){
+        StorageAccount res = null;
+        if(isAccountsCacheUpdateRequired(storageAccountName)){
+            List<StorageAccount> storageAccounts = getAzureClient().storageAccounts().list();
+            storageAccountsCache = Pair.of(Instant.now(), storageAccounts);
+        }
+        if(!CollectionUtils.isEmpty(storageAccountsCache.getRight())){
+            res = storageAccountsCache
+                    .getRight()
+                    .stream()
+                    .filter(sa -> sa.name().equals(storageAccountName))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Storage account wasn't found"));
+        }
+        return res;
+    }
+
+    private CloudStorageAccount getCloudStorageAccount(StorageAccount storageAccount) throws Exception {
+        CloudStorageAccount cloudStorageAccount = null;
+        String key = null;
+        if(isKeysCacheUpdateRequired(storageAccount.name())){
+            key = storageAccount.getKeys().get(0).value();
+            storageAccountToAccessKeysCache.put(storageAccount.name(), Pair.of(Instant.now(), key));
+        } else {
+            key = storageAccountToAccessKeysCache.get(storageAccount.name()).getRight();
+        }
+        cloudStorageAccount = new CloudStorageAccount(new StorageCredentialsAccountAndKey(storageAccount.name(), key), true);
+        return cloudStorageAccount;
+    }
+
+    private boolean isAccountsCacheUpdateRequired(String storageAccountName){
+        boolean res = false;
+        if(storageAccountsCache == null
+                || CollectionUtils.isEmpty(storageAccountsCache.getRight())
+                || storageAccountsCache.getLeft().isBefore(Instant.now().minusSeconds(cacheEvictionSeconds))
+                || !storageAccountsCache.getRight().stream().anyMatch(sa -> sa.name().equals(storageAccountName))){
+            log.debug("Searching for account: {}, update of storage accounts cache is required", storageAccountName);
+            res = true;
+        }
+        return res;
+    }
+
+    private boolean isKeysCacheUpdateRequired(String storageAccountName){
+        boolean res = false;
+        if(storageAccountToAccessKeysCache == null
+                || storageAccountToAccessKeysCache.get(storageAccountName) == null
+                || storageAccountToAccessKeysCache.get(storageAccountName)
+                        .getLeft().isBefore(Instant.now().minusSeconds(cacheEvictionSeconds))){
+            log.debug("Searching for account: {}, update of storage accounts keys cache is required", storageAccountName);
+            res = true;
+        }
+        return res;
     }
 }
